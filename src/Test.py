@@ -1,27 +1,66 @@
-import cv2
-import numpy as np
-from matplotlib import pyplot as plt
+import socket
+import struct
 
-# Đọc hình ảnh từ tệp và chuyển sang thang độ xám
-image = cv2.imread('resources/cat.jpg')
-image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+PKT_HELLO = 0
+PKT_CALC = 1
+PKT_RESULT = 2
+PKT_BYE = 3
+PKT_FLAG = 4
 
-# Thực hiện biến đổi Fourier
-f_transform = np.fft.fft2(image_gray)
-f_shift = np.fft.fftshift(f_transform)
-magnitude_spectrum = 20 * np.log(np.abs(f_shift))
+def send_packet(sock, packet_type, data=b''):
+    packet_len = len(data)
+    packet_type = packet_type.to_bytes(4, 'little')
+    packet_len = packet_len.to_bytes(4, 'little')
+    sock.sendall(packet_type + packet_len + data)
 
-# Hiển thị hình ảnh gốc và biểu đồ phổ tần số
+def receive_packet(sock):
+    header = sock.recv(8)
+    if not header:
+        return None, None
+    print("Header received:", header)
+    packet_type, packet_len = struct.unpack('<ii', header)
+    print("Packet received length:", packet_len)
+    data = sock.recv(packet_len)
+    return packet_type, data
 
-# Ảnh gốc
-plt.subplot(221), plt.imshow(image, cmap='gray')
-plt.title('Original Image'), plt.xticks([]), plt.yticks([])
+def main():
+    server_address = ('112.137.129.129', 27001)
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        print("Starting the client...")
+        sock.connect(server_address)
+        print("Connected to the server.")
 
-# Ảnh xám
-plt.subplot(222), plt.imshow(image_gray, cmap='gray')
-plt.title('Gray Image'), plt.xticks([]), plt.yticks([])
+        student_id = "21020456"
+        send_packet(sock, PKT_HELLO, student_id.encode('utf-8'))
+        print("Sent PKT_HELLO packet.")
 
-# Biến đổi Fourier
-plt.subplot(2,2,3), plt.imshow(magnitude_spectrum, cmap='gray')
-plt.title('Magnitude Spectrum'), plt.xticks([]), plt.yticks([])
-plt.show()
+        while True:
+            packet_type, data = receive_packet(sock)
+            print("Received packet type:", packet_type)
+            if packet_type is None:
+                break
+            if packet_type == PKT_CALC:
+                # Extracting values a and b from the received data
+                a = int.from_bytes(data[0:4], 'little', signed=True)
+                b = int.from_bytes(data[4:8], 'little', signed=True)
+                print("Received a =", a, "and b =", b)
+
+                # Calculate the sum of a and b
+                result = a + b
+                result_bytes = result.to_bytes(4, 'little')
+
+                # Sending the result back to the server
+                send_packet(sock, PKT_RESULT, result_bytes)
+                print("Sent PKT_RESULT packet with the sum:", result)
+            elif packet_type == PKT_FLAG:
+                flag = data.decode('utf-8')
+                print("Received PKT_FLAG packet with flag:", flag)
+                break
+            else:
+                break
+    except Exception as e:
+        print(e)
+
+if __name__ == '__main__':
+    main()
